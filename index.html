@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS Learning: Sorting & Searching (M.4)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Kanit', sans-serif; background-color: #f3f4f6; }
+        .bar { transition: all 0.3s ease; }
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.5s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        .card-hover:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
+        .student-list::-webkit-scrollbar { width: 8px; }
+        .student-list::-webkit-scrollbar-track { background: #f1f1f1; }
+        .student-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+<div id="app" class="min-h-screen flex flex-col">
+
+    <nav class="p-4 shadow-lg flex justify-between items-center z-50 transition-colors duration-300"
+         :class="isAdmin ? 'bg-slate-800 text-white' : 'bg-indigo-600 text-white'">
+        <div class="flex items-center gap-2">
+            <i class="ph ph-code text-2xl"></i>
+            <span class="text-xl font-bold">
+                {{ isAdmin ? 'Teacher Panel (ระบบจัดการ)' : 'AlgoLearn (ม.4)' }}
+            </span>
+        </div>
+        <div v-if="currentUser" class="flex items-center gap-4">
+            <div class="text-right hidden sm:block">
+                <div class="font-bold">{{ currentUser.name }}</div>
+                <div class="text-xs opacity-80">{{ isAdmin ? 'สถานะ: ครูผู้สอน' : 'รหัสนักเรียน: ' + currentUser.id }}</div>
+            </div>
+            <button @click="logout" class="bg-red-500 hover:bg-red-600 px-3 py-1 rounded text-sm transition shadow">
+                <i class="ph ph-sign-out"></i> <span class="hidden sm:inline">ออกจากระบบ</span>
+            </button>
+        </div>
+    </nav>
+
+    <main class="flex-grow p-6 container mx-auto relative">
+
+        <transition name="fade">
+        <div v-if="currentView === 'login'" class="flex flex-col items-center justify-center h-[80vh]">
+            <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center border-t-4 border-indigo-500 relative overflow-hidden">
+                <div class="absolute top-0 left-0 -mt-4 -ml-4 w-20 h-20 bg-blue-100 rounded-full opacity-50 blur-xl"></div>
+                <div class="absolute bottom-0 right-0 -mb-4 -mr-4 w-24 h-24 bg-purple-100 rounded-full opacity-50 blur-xl"></div>
+                
+                <h2 class="text-2xl font-bold mb-2 text-indigo-700">เข้าสู่ระบบห้องเรียน</h2>
+                <p class="text-gray-500 mb-8">วิชาวิทยาการคอมพิวเตอร์ 1</p>
+                
+                <div class="mb-2 space-y-4 relative z-10">
+                    <div>
+                        <input v-model="loginInput" @keyup.enter="handleLogin" type="text" placeholder="กรอกรหัสนักเรียน / Admin" 
+                               class="w-full p-4 border border-gray-300 rounded-xl focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none text-center text-lg transition-all shadow-sm">
+                    </div>
+                    
+                    <div v-if="showPasswordInput" class="animate-bounce-in">
+                        <input v-model="passwordInput" @keyup.enter="handleLogin" type="password" placeholder="รหัสผ่านผู้สอน (1234)" 
+                               class="w-full p-4 border border-gray-300 rounded-xl focus:ring-4 focus:ring-slate-200 focus:border-slate-500 outline-none text-center text-lg bg-slate-50 shadow-sm">
+                    </div>
+
+                    <button @click="handleLogin" 
+                            class="w-full text-white p-4 rounded-xl font-bold text-lg transition shadow-lg transform active:scale-95 flex justify-center items-center gap-2"
+                            :class="showPasswordInput ? 'bg-slate-700 hover:bg-slate-800' : 'bg-indigo-600 hover:bg-indigo-700'">
+                        <span>{{ showPasswordInput ? 'ยืนยันตัวตน Admin' : 'เข้าสู่บทเรียน' }}</span>
+                        <i class="ph ph-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+            <p class="mt-6 text-gray-400 text-sm">© 2024 Computer Science Learning Platform</p>
+        </div>
+        </transition>
+
+        <transition name="fade">
+        <div v-if="currentView === 'teacher_dashboard'" class="py-4">
+            <h1 class="text-2xl font-bold text-slate-700 mb-6 flex items-center gap-2">
+                <i class="ph ph-control"></i> แผงควบคุมผู้สอน
+            </h1>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="md:col-span-1 space-y-6">
+                    
+                    <div class="bg-white p-6 rounded-xl shadow-md border-l-4 border-green-500">
+                        <h3 class="font-bold text-lg text-slate-800 mb-2">จัดการรายชื่อนักเรียน</h3>
+                        <p class="text-sm text-gray-500 mb-4">นำเข้าไฟล์ Excel (.xlsx) ที่มีคอลัมน์ A (รหัส) และ B (ชื่อ)</p>
+                        
+                        <label class="cursor-pointer bg-green-50 hover:bg-green-100 text-green-700 w-full py-3 rounded-lg border border-green-200 border-dashed flex items-center justify-center gap-2 transition hover:shadow-md">
+                            <i class="ph ph-microsoft-excel-logo text-xl"></i> 
+                            <span>เลือกไฟล์ Excel</span>
+                            <input type="file" @change="handleFileUpload" class="hidden" accept=".xlsx, .xls">
+                        </label>
+                        
+                        <div class="mt-4 flex justify-between items-center text-sm">
+                            <span class="text-gray-500">จำนวนนักเรียน:</span>
+                            <span class="font-bold text-slate-800 text-xl">{{ studentData.length }}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gradient-to-br from-slate-700 to-slate-800 text-white p-6 rounded-xl shadow-lg">
+                        <h3 class="font-bold text-xl mb-4">โหมดการสอน (Demo)</h3>
+                        <p class="text-slate-300 text-sm mb-6">เข้าสู่หน้าบทเรียนเพื่อสาธิต Visualizer บนหน้าจอใหญ่</p>
+                        <button @click="enterTeachingMode" class="w-full bg-white text-slate-900 py-3 rounded-lg font-bold hover:bg-blue-50 transition flex items-center justify-center gap-2 shadow-lg">
+                            <i class="ph ph-presentation-chart"></i> เริ่มการสอน
+                        </button>
+                    </div>
+                </div>
+
+                <div class="md:col-span-2 bg-white rounded-xl shadow-md overflow-hidden flex flex-col h-[70vh]">
+                    <div class="p-4 border-b bg-gray-50 flex justify-between items-center">
+                        <h3 class="font-bold text-slate-700 flex items-center gap-2">
+                            <i class="ph ph-users"></i> รายชื่อในระบบ
+                        </h3>
+                        <button v-if="studentData.length > 0" @click="clearStudentData" class="text-xs text-red-500 hover:text-red-700 hover:underline">
+                            <i class="ph ph-trash"></i> ล้างข้อมูล
+                        </button>
+                    </div>
+                    <div class="overflow-y-auto student-list flex-grow p-0 relative">
+                        <table class="w-full text-left border-collapse">
+                            <thead class="bg-gray-100 text-gray-600 sticky top-0 z-10 shadow-sm">
+                                <tr>
+                                    <th class="p-3 text-sm font-semibold w-1/4">รหัสนักเรียน</th>
+                                    <th class="p-3 text-sm font-semibold">ชื่อ-นามสกุล</th>
+                                    <th class="p-3 text-sm font-semibold text-center">สถานะ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-if="studentData.length === 0">
+                                    <td colspan="3" class="p-12 text-center text-gray-400 flex flex-col items-center justify-center">
+                                        <i class="ph ph-folder-open text-4xl mb-2"></i>
+                                        ยังไม่มีข้อมูลนักเรียน <br> กรุณาอัปโหลดไฟล์ Excel
+                                    </td>
+                                </tr>
+                                <tr v-for="(student, idx) in studentData" :key="idx" class="border-b last:border-0 hover:bg-slate-50 transition">
+                                    <td class="p-3 text-slate-600 font-mono border-r border-gray-100">{{ student.id }}</td>
+                                    <td class="p-3 text-slate-800 font-medium">{{ student.name }}</td>
+                                    <td class="p-3 text-center">
+                                        <span class="inline-flex items-center gap-1 text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">
+                                            <span class="w-2 h-2 rounded-full bg-green-500"></span> พร้อม
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        </transition>
+
+        <transition name="fade">
+        <div v-if="currentView === 'menu'" class="py-8">
+            <div class="flex items-center justify-between mb-8">
+                <h1 class="text-3xl font-bold text-slate-700">เลือกหัวข้อการเรียนรู้</h1>
+                <button v-if="isAdmin" @click="currentView = 'teacher_dashboard'" class="flex items-center gap-2 text-slate-500 hover:text-slate-800 font-semibold bg-slate-200 px-4 py-2 rounded-lg transition">
+                    <i class="ph ph-arrow-left"></i> กลับไปหน้า Admin
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="col-span-full mb-2 border-b pb-2 text-lg font-bold text-indigo-600 flex items-center gap-2">
+                    <i class="ph ph-arrows-down-up"></i> การจัดเรียงข้อมูล (Sorting)
+                </div>
+                
+                <div v-for="algo in sortingAlgos" :key="algo.key" @click="selectTopic(algo)" 
+                     class="bg-white p-6 rounded-xl shadow-md cursor-pointer card-hover border-l-4"
+                     :class="algo.color">
+                    <div class="flex justify-between items-start">
+                        <h3 class="font-bold text-xl mb-2">{{ algo.name }}</h3>
+                        <i :class="getIcon(algo.key)" class="text-2xl opacity-20"></i>
+                    </div>
+                    <p class="text-sm text-gray-500">{{ algo.desc }}</p>
+                </div>
+
+                <div class="col-span-full mt-6 mb-2 border-b pb-2 text-lg font-bold text-pink-600 flex items-center gap-2">
+                    <i class="ph ph-magnifying-glass"></i> การค้นหาข้อมูล (Searching)
+                </div>
+
+                <div v-for="algo in searchingAlgos" :key="algo.key" @click="selectTopic(algo)" 
+                     class="bg-white p-6 rounded-xl shadow-md cursor-pointer card-hover border-l-4"
+                     :class="algo.color">
+                    <h3 class="font-bold text-xl mb-2">{{ algo.name }}</h3>
+                    <p class="text-sm text-gray-500">{{ algo.desc }}</p>
+                </div>
+            </div>
+
+            <div class="mt-12 text-center">
+                <button @click="startQuiz" class="bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xl font-bold px-10 py-4 rounded-full shadow-lg hover:scale-105 transition transform flex items-center gap-3 mx-auto">
+                    <i class="ph ph-exam text-3xl"></i> ทำแบบทดสอบ (15 ข้อ)
+                </button>
+            </div>
+        </div>
+        </transition>
+
+        <transition name="fade">
+        <div v-if="currentView === 'content' && activeTopic" class="h-full">
+            <button @click="currentView = 'menu'" class="mb-4 text-gray-500 hover:text-indigo-600 flex items-center gap-1 font-medium transition">
+                <i class="ph ph-arrow-left"></i> กลับเมนูหลัก
+            </button>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+                <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md overflow-y-auto max-h-[80vh]">
+                    <h2 class="text-2xl font-bold mb-4 flex items-center gap-2" :class="activeTopic.textColor">
+                        <i class="ph ph-book-bookmark"></i> {{ activeTopic.name }}
+                    </h2>
+                    <div class="prose text-slate-600 text-sm leading-relaxed whitespace-pre-line mb-6">
+                        {{ activeTopic.content }}
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded-lg text-xs font-mono border-l-4 border-gray-400">
+                        <strong class="text-gray-700 block mb-1">KEY CONCEPT:</strong> 
+                        {{ activeTopic.concept }}
+                    </div>
+                </div>
+
+                <div class="lg:col-span-2 bg-slate-800 rounded-xl shadow-md p-6 flex flex-col items-center justify-center relative overflow-hidden min-h-[450px]">
+                    <div class="absolute top-4 left-4 text-white/50 text-sm font-mono">Visualizer Mode</div>
+                    
+                    <div class="flex items-end justify-center gap-1 h-64 w-full mb-8 px-4">
+                        <div v-for="(val, idx) in dataArray" :key="idx"
+                             :style="{ height: val + 'px', backgroundColor: getBarColor(idx) }"
+                             class="flex-1 max-w-[40px] rounded-t bar flex items-end justify-center pb-1 text-[10px] text-white font-bold relative shadow-sm">
+                             <span v-if="dataArray.length <= 20">{{ val }}</span>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-4 flex-wrap justify-center z-10">
+                        <button @click="resetArray" :disabled="isSorting" class="bg-gray-700 hover:bg-gray-600 text-white px-6 py-2 rounded-full transition disabled:opacity-50">
+                            <i class="ph ph-arrows-clockwise"></i> สุ่มใหม่
+                        </button>
+                        <button @click="runAlgorithm" :disabled="isSorting" 
+                                class="bg-green-500 hover:bg-green-600 text-white px-10 py-2 rounded-full font-bold transition shadow-lg shadow-green-500/30 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <i v-if="!isSorting" class="ph ph-play-circle text-xl"></i>
+                            <i v-else class="ph ph-spinner animate-spin text-xl"></i>
+                            {{ isSorting ? 'กำลังทำงาน...' : 'เริ่มทำงาน' }}
+                        </button>
+                    </div>
+                    
+                    <div v-if="statusMessage" class="mt-8 text-yellow-300 font-mono text-sm bg-black/40 px-6 py-2 rounded-full backdrop-blur-sm">
+                        > {{ statusMessage }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        </transition>
+
+        <transition name="fade">
+        <div v-if="currentView === 'quiz'" class="max-w-2xl mx-auto py-8">
+            <div v-if="!quizFinished">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold flex items-center gap-2">
+                        <i class="ph ph-pencil-simple-slash"></i> แบบทดสอบ
+                    </h2>
+                    <span class="text-indigo-600 bg-indigo-100 px-3 py-1 rounded-full text-sm font-bold">
+                        ข้อที่ {{ currentQuestionIndex + 1 }} / {{ quizQuestions.length }}
+                    </span>
+                </div>
+
+                <div class="bg-white p-8 rounded-2xl shadow-lg border-t-8 border-indigo-500 min-h-[300px] flex flex-col justify-between">
+                    <div>
+                        <h3 class="text-xl font-semibold mb-8 leading-relaxed">{{ quizQuestions[currentQuestionIndex].question }}</h3>
+                        <div class="space-y-3">
+                            <button v-for="(option, idx) in quizQuestions[currentQuestionIndex].options" :key="idx"
+                                    @click="selectAnswer(idx)"
+                                    class="w-full text-left p-4 rounded-xl border-2 hover:bg-indigo-50 hover:border-indigo-300 transition duration-200 group"
+                                    :class="selectedAnswer === idx ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-200' : 'border-gray-100'">
+                                <span class="font-bold mr-3 w-6 inline-block" 
+                                      :class="selectedAnswer === idx ? 'text-indigo-600' : 'text-gray-400 group-hover:text-indigo-400'">
+                                    {{ ['A','B','C','D'][idx] }}.
+                                </span> 
+                                {{ option }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8 flex justify-end">
+                    <button @click="nextQuestion" :disabled="selectedAnswer === null"
+                            class="bg-indigo-600 text-white px-10 py-3 rounded-full shadow-lg hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition transform active:scale-95 flex items-center gap-2 font-bold">
+                        {{ currentQuestionIndex === quizQuestions.length - 1 ? 'ส่งคำตอบ' : 'ข้อถัดไป' }} <i class="ph ph-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div v-else class="text-center bg-white p-12 rounded-3xl shadow-2xl border-t-8" 
+                 :class="score >= 8 ? 'border-green-500' : 'border-orange-500'">
+                
+                <div class="mb-6">
+                    <i v-if="score >= 12" class="ph ph-trophy text-7xl text-yellow-400 animate-bounce"></i>
+                    <i v-else-if="score >= 8" class="ph ph-thumbs-up text-7xl text-green-400"></i>
+                    <i v-else class="ph ph-smiley-sad text-7xl text-orange-400"></i>
+                </div>
+                
+                <h2 class="text-3xl font-bold mb-2 text-slate-700">ผลคะแนนของคุณ</h2>
+                <p class="text-gray-500 mb-8 font-medium text-lg">{{ currentUser.name }}</p>
+                
+                <div class="inline-block bg-slate-50 px-10 py-8 rounded-3xl mb-8 border border-slate-100 shadow-inner">
+                    <div class="text-7xl font-black mb-2" :class="score >= 8 ? 'text-green-600' : 'text-orange-500'">{{ score }}</div>
+                    <div class="text-gray-400 font-medium">คะแนนเต็ม 15</div>
+                </div>
+                
+                <p class="mb-10 text-xl font-medium text-slate-600">{{ getFeedback(score) }}</p>
+
+                <div class="flex justify-center gap-4">
+                     <button @click="startQuiz" class="px-8 py-3 rounded-xl border-2 border-gray-200 hover:bg-gray-50 text-gray-600 font-bold transition">ทำอีกครั้ง</button>
+                     <button @click="currentView = 'menu'" class="bg-indigo-600 text-white px-8 py-3 rounded-xl hover:bg-indigo-700 shadow-lg font-bold transition">กลับเมนูหลัก</button>
+                </div>
+            </div>
+        </div>
+        </transition>
+
+    </main>
+</div>
+
+<script>
+const { createApp, ref, computed } = Vue;
+
+createApp({
+    setup() {
+        // --- State ---
+        const currentView = ref('login');
+        const loginInput = ref('');
+        const passwordInput = ref('');
+        const showPasswordInput = ref(false);
+        const currentUser = ref(null);
+        
+        // Default Mock Data (Empty initially to force Admin upload usage)
+        const studentData = ref([
+             { id: '1001', name: 'นายตัวอย่าง (Demo)' } // Keep one for immediate testing
+        ]);
+        
+        const activeTopic = ref(null);
+        const dataArray = ref([]);
+        const isSorting = ref(false);
+        const activeIndices = ref([]); 
+        const sortedIndices = ref([]); 
+        const statusMessage = ref('');
+
+        const isAdmin = computed(() => currentUser.value && currentUser.value.role === 'admin');
+
+        // --- Data Content ---
+        const sortingAlgos = [
+            { key: 'bubble', name: 'Bubble Sort', desc: 'เรียงลำดับแบบฟองสบู่', color: 'border-blue-400', textColor: 'text-blue-600', 
+              concept: 'เปรียบเทียบข้อมูลคู่ติดกัน ถ้าตัวหน้ามากกว่าตัวหลังให้สลับที่ ทำซ้ำจนกว่าจะเรียงเสร็จ',
+              content: 'Bubble Sort เป็นอัลกอริทึมที่ง่ายที่สุด ทำงานโดยการเปรียบเทียบข้อมูลที่อยู่ติดกันทีละคู่ และสลับตำแหน่งหากลำดับผิด (เช่น น้อยไปมาก แต่ตัวหน้ามากกว่าตัวหลัง) ทำแบบนี้ซ้ำๆ ข้อมูลที่มีค่ามากที่สุดจะ "ลอย" ไปอยู่ที่ท้ายสุดเหมือนฟองสบู่' },
+            { key: 'selection', name: 'Selection Sort', desc: 'เลือกค่าที่น้อยที่สุด', color: 'border-green-400', textColor: 'text-green-600',
+              concept: 'ค้นหาค่าที่น้อยที่สุดในส่วนที่ยังไม่เรียง แล้วนำมาวางต่อท้ายส่วนที่เรียงแล้ว',
+              content: 'Selection Sort ทำงานโดยแบ่งข้อมูลเป็น 2 ส่วน คือส่วนที่เรียงแล้วและส่วนที่ยังไม่เรียง ในแต่ละรอบ จะทำการค้นหา "ค่าที่น้อยที่สุด" จากส่วนที่ยังไม่เรียง แล้วสลับเอามานำไว้ในตำแหน่งแรกสุดของส่วนที่ยังไม่เรียง' },
+            { key: 'insertion', name: 'Insertion Sort', desc: 'แทรกไพ่ในมือ', color: 'border-yellow-400', textColor: 'text-yellow-600',
+              concept: 'หยิบข้อมูลทีละตัว แล้วนำไป "แทรก" ในตำแหน่งที่ถูกต้องของกลุ่มข้อมูลที่เรียงแล้ว',
+              content: 'Insertion Sort เปรียบเสมือนการเรียงไพ่ในมือ เราจะหยิบไพ่ใบใหม่ขึ้นมา แล้วมองหาตำแหน่งที่ถูกต้องในกองไพ่ที่เราถืออยู่แล้วเสียบ (Insert) ไพ่นั้นลงไป ทำให้ไพ่ในมือเราเรียงลำดับถูกต้องเสมอ' },
+            { key: 'merge', name: 'Merge Sort', desc: 'แบ่งแยกและเอาชนะ', color: 'border-purple-400', textColor: 'text-purple-600',
+              concept: 'แบ่งข้อมูลเป็นกลุ่มย่อยจนเหลือตัวเดียว แล้วนำกลับมา "ผสาน" (Merge) กันโดยเรียงลำดับไปด้วย',
+              content: 'Merge Sort ใช้วิธี Divide and Conquer (แบ่งแยกและเอาชนะ) โดยแบ่งข้อมูลออกเป็นครึ่งไปเรื่อยๆ จนเหลือกลุ่มละ 1 ตัว จากนั้นเริ่มกระบวนการ Merge คือการนำกลุ่มย่อยมารวมกันโดยเปรียบเทียบค่าและเรียงให้ถูกต้อง' },
+            { key: 'quick', name: 'Quick Sort', desc: 'เลือกจุดหมุน (Pivot)', color: 'border-red-400', textColor: 'text-red-600',
+              concept: 'เลือกค่า Pivot แบ่งข้อมูลเป็น 2 ฝั่ง (น้อยกว่า Pivot และ มากกว่า Pivot) แล้วทำซ้ำในแต่ละฝั่ง',
+              content: 'Quick Sort ทำงานไวมาก โดยเลือกค่าหนึ่งเป็น Pivot จากนั้นจัดกลุ่มข้อมูล: ตัวที่น้อยกว่า Pivot ไปซ้าย, มากกว่าไปขวา แล้วทำซ้ำกระบวนการนี้กับกลุ่มย่อยทางซ้ายและขวา' },
+        ];
+
+        const searchingAlgos = [
+            { key: 'linear', name: 'Linear Search', desc: 'ค้นหาตามลำดับ', color: 'border-orange-400', textColor: 'text-orange-600',
+              concept: 'ไล่ดูข้อมูลทีละตัวตั้งแต่ต้นจนจบ ว่าตรงกับสิ่งที่หาหรือไม่',
+              content: 'Linear Search คือการค้นหาแบบตรงไปตรงมาที่สุด โดยเริ่มดูข้อมูลตั้งแต่ตัวแรก ตัวที่สอง ไปเรื่อยๆ จนกว่าจะเจอ หรือจนกว่าข้อมูลจะหมด ข้อดีคือข้อมูลไม่ต้องเรียงลำดับมาก่อน แต่ข้อเสียคือช้าถ้าข้อมูลเยอะ' },
+            { key: 'binary', name: 'Binary Search', desc: 'ค้นหาแบบทวิภาค', color: 'border-teal-400', textColor: 'text-teal-600',
+              concept: 'แบ่งครึ่งข้อมูลแล้วดูว่าค่าที่หาอยู่ฝั่งซ้ายหรือขวา (ข้อมูลต้องเรียงลำดับแล้ว)',
+              content: 'Binary Search มีประสิทธิภาพสูงมาก แต่ข้อมูล "ต้องเรียงลำดับแล้ว" เท่านั้น หลักการคือดูตัวตรงกลาง ถ้าตัวที่หา "น้อยกว่า" ตัวกลาง ก็ไปหาแค่ฝั่งซ้าย ถ้า "มากกว่า" ก็ไปหาแค่ฝั่งขวา ตัดข้อมูลทิ้งทีละครึ่งเสมอ' }
+        ];
+
+        // --- Visualizer Helper ---
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        const getBarColor = (idx) => {
+            if (activeIndices.value.includes(idx)) return '#facc15'; // Yellow
+            if (sortedIndices.value.includes(idx)) return '#22c55e'; // Green
+            return '#6366f1'; // Default Indigo
+        };
+        const getIcon = (key) => {
+            const icons = { bubble: 'ph-circles-three', selection: 'ph-cursor-click', insertion: 'ph-cards', merge: 'ph-arrows-merge', quick: 'ph-lightning', linear: 'ph-arrow-right', binary: 'ph-arrows-split' };
+            return 'ph ' + (icons[key] || 'ph-code');
+        };
+
+        const resetArray = () => {
+            const count = window.innerWidth < 600 ? 10 : 15;
+            if (activeTopic.value && activeTopic.value.key === 'binary') {
+                dataArray.value = Array.from({length: count}, () => Math.floor(Math.random() * 180) + 20).sort((a,b) => a-b);
+            } else {
+                dataArray.value = Array.from({length: count}, () => Math.floor(Math.random() * 180) + 20);
+            }
+            activeIndices.value = []; sortedIndices.value = []; statusMessage.value = 'พร้อมทำงาน';
+        };
+
+        // --- Logic: Upload, Login, Admin ---
+        const handleFileUpload = (event) => {
+            const file = event.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                    
+                    const loadedStudents = jsonData.slice(1).map(row => ({
+                        id: String(row[0]).trim(),
+                        name: row[1]
+                    })).filter(s => s.id && s.name && s.id !== 'undefined');
+
+                    if(loadedStudents.length > 0) {
+                        studentData.value = loadedStudents;
+                        alert(`นำเข้าข้อมูลสำเร็จ: ${loadedStudents.length} คน`);
+                    } else {
+                        alert("ไม่พบข้อมูลในไฟล์ หรือรูปแบบไฟล์ไม่ถูกต้อง");
+                    }
+                } catch (err) {
+                    alert("เกิดข้อผิดพลาดในการอ่านไฟล์: " + err.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        };
+
+        const clearStudentData = () => {
+            if(confirm('ต้องการล้างรายชื่อนักเรียนทั้งหมดหรือไม่?')) {
+                studentData.value = [];
+            }
+        };
+
+        const handleLogin = () => {
+            const input = loginInput.value.trim();
+            if (!input) return;
+
+            // 1. Admin Check
+            if (input.toLowerCase() === 'admin') {
+                if (!showPasswordInput.value) {
+                    showPasswordInput.value = true;
+                    return;
+                }
+                if (passwordInput.value === '1234') { 
+                    currentUser.value = { id: 'ADMIN', name: 'คุณครูผู้สอน', role: 'admin' };
+                    currentView.value = 'teacher_dashboard';
+                    resetLoginInputs();
+                } else {
+                    alert('รหัสผ่าน Admin ไม่ถูกต้อง');
+                }
+                return;
+            }
+
+            // 2. Student Check
+            const student = studentData.value.find(s => s.id === input);
+            if (student) {
+                currentUser.value = { ...student, role: 'student' };
+                currentView.value = 'menu';
+                resetLoginInputs();
+            } else {
+                alert('ไม่พบรหัสนักเรียนในระบบ \n(หากยังไม่ได้ลงทะเบียน โปรดติดต่อครูผู้สอน)');
+            }
+        };
+
+        const resetLoginInputs = () => {
+            loginInput.value = '';
+            passwordInput.value = '';
+            showPasswordInput.value = false;
+        };
+
+        const enterTeachingMode = () => { currentView.value = 'menu'; };
+        
+        const logout = () => {
+            if (confirm("ต้องการออกจากระบบใช่หรือไม่?")) {
+                currentUser.value = null;
+                currentView.value = 'login';
+                resetLoginInputs();
+                resetQuiz();
+            }
+        };
+
+        const selectTopic = (algo) => { activeTopic.value = algo; currentView.value = 'content'; resetArray(); };
+
+        // --- Visualizer Algorithms ---
+        const runAlgorithm = async () => {
+            if (isSorting.value) return;
+            isSorting.value = true;
+            statusMessage.value = 'กำลังทำงาน...';
+            activeIndices.value = []; sortedIndices.value = [];
+            const arr = [...dataArray.value];
+            const key = activeTopic.value.key;
+
+            if (key === 'bubble') await bubbleSort(arr);
+            else if (key === 'selection') await selectionSort(arr);
+            else if (key === 'insertion') await insertionSort(arr);
+            else if (key === 'linear') await linearSearch(arr);
+            else if (key === 'binary') await binarySearch(arr);
+            else await bubbleSort(arr); // Default
+
+            isSorting.value = false; statusMessage.value = 'เสร็จสิ้น!';
+        };
+
+        // ... Algorithms (Simplified) ...
+        const bubbleSort = async (arr) => {
+            let n = arr.length;
+            for (let i = 0; i < n; i++) {
+                for (let j = 0; j < n - i - 1; j++) {
+                    activeIndices.value = [j, j + 1];
+                    statusMessage.value = `เทียบ ${arr[j]} กับ ${arr[j+1]}`;
+                    await sleep(300);
+                    if (arr[j] > arr[j + 1]) {
+                        [arr[j], arr[j+1]] = [arr[j+1], arr[j]];
+                        dataArray.value = [...arr];
+                        await sleep(300);
+                    }
+                }
+                sortedIndices.value.push(n - i - 1);
+            }
+            sortedIndices.value.push(0);
+        };
+        const selectionSort = async (arr) => {
+            let n = arr.length;
+            for (let i = 0; i < n; i++) {
+                let minIdx = i; activeIndices.value = [i];
+                for (let j = i + 1; j < n; j++) {
+                    activeIndices.value = [minIdx, j];
+                    statusMessage.value = `หาค่าน้อยสุด... เจอ ${arr[j]} เทียบกับ ${arr[minIdx]}`;
+                    await sleep(200);
+                    if (arr[j] < arr[minIdx]) minIdx = j;
+                }
+                if (minIdx !== i) { [arr[i], arr[minIdx]] = [arr[minIdx], arr[i]]; dataArray.value = [...arr]; await sleep(300); }
+                sortedIndices.value.push(i);
+            }
+        };
+        const insertionSort = async (arr) => {
+            let n = arr.length; sortedIndices.value.push(0);
+            for (let i = 1; i < n; i++) {
+                let key = arr[i]; let j = i - 1; activeIndices.value = [i];
+                statusMessage.value = `หยิบ ${key} มาแทรก`; await sleep(400);
+                while (j >= 0 && arr[j] > key) {
+                    activeIndices.value = [j, j+1]; arr[j + 1] = arr[j]; dataArray.value = [...arr]; await sleep(250); j--;
+                }
+                arr[j + 1] = key; dataArray.value = [...arr]; sortedIndices.value.push(i); await sleep(300);
+            }
+            sortedIndices.value = Array.from({length: n}, (_, i) => i);
+        };
+        const linearSearch = async (arr) => {
+            const target = arr[Math.floor(Math.random() * arr.length)];
+            statusMessage.value = `ค้นหาเลข: ${target}`; await sleep(800);
+            for(let i=0; i<arr.length; i++) {
+                activeIndices.value = [i]; statusMessage.value = `ช่องที่ ${i} คือ ${arr[i]} ใช่ไหม?`; await sleep(400);
+                if(arr[i] === target) { statusMessage.value = `เจอแล้ว! ที่ตำแหน่ง ${i}`; sortedIndices.value = [i]; activeIndices.value = []; return; }
+            }
+        };
+        const binarySearch = async (arr) => {
+            const target = arr[Math.floor(Math.random() * arr.length)];
+            statusMessage.value = `ค้นหาเลข: ${target}`; await sleep(800);
+            let left = 0, right = arr.length - 1;
+            while (left <= right) {
+                let mid = Math.floor((left + right) / 2); activeIndices.value = [mid];
+                statusMessage.value = `ดูตรงกลาง (${arr[mid]})`; await sleep(800);
+                if (arr[mid] === target) { statusMessage.value = `เจอแล้ว! ที่ตำแหน่ง ${mid}`; sortedIndices.value = [mid]; activeIndices.value = []; return; }
+                else if (arr[mid] < target) { statusMessage.value = `น้อยกว่า -> ตัดซ้าย`; left = mid + 1; }
+                else { statusMessage.value = `มากกว่า -> ตัดขวา`; right = mid - 1; }
+                let range = []; for(let k=left; k<=right; k++) range.push(k); sortedIndices.value = range; await sleep(500);
+            }
+        };
+
+        // --- Quiz Logic ---
+        const quizQuestions = [
+            { question: "อัลกอริทึมใดเปรียบเทียบข้อมูลคู่ที่อยู่ติดกันและสลับที่?", options: ["Insertion Sort", "Bubble Sort", "Quick Sort", "Merge Sort"], correct: 1 },
+            { question: "ข้อใดคือ Concept ของ Selection Sort?", options: ["แบ่งแยกและเอาชนะ", "แทรกข้อมูลเหมือนไพ่", "หาค่าน้อยสุดแล้วนำมาวางข้างหน้า", "หาค่ากลางแล้วแบ่งครึ่ง"], correct: 2 },
+            { question: "การค้นหาข้อมูลแบบ Binary Search จำเป็นต้องมีเงื่อนไขใด?", options: ["ข้อมูลต้องเป็นตัวเลขเท่านั้น", "ข้อมูลต้องเรียงลำดับมาก่อน", "ต้องมีข้อมูลจำนวนคู่", "ใช้กับข้อมูลไม่เกิน 100 ตัว"], correct: 1 },
+            { question: "Linear Search เหมาะกับข้อมูลแบบใดที่สุด?", options: ["ข้อมูลจำนวนมหาศาล", "ข้อมูลที่เรียงลำดับแล้ว", "ข้อมูลจำนวนน้อยและไม่เรียงลำดับ", "ข้อมูลที่มีค่าติดลบ"], correct: 2 },
+            { question: "Quick Sort ใช้หลักการใดในการทำงาน?", options: ["เลือก Pivot แล้วแบ่งกลุ่ม", "สลับคู่ติดกัน", "ค้นหาค่าต่ำสุด", "รวมกลุ่มข้อมูลย่อย"], correct: 0 },
+            { question: "อัลกอริทึมใดเปรียบเสมือนการ 'เรียงไพ่ในมือ'?", options: ["Bubble Sort", "Merge Sort", "Insertion Sort", "Selection Sort"], correct: 2 },
+            { question: "ถ้าข้อมูลมี 1,000 ตัว Binary Search จะค้นหาสูงสุดกี่ครั้ง (โดยประมาณ)?", options: ["1000 ครั้ง", "500 ครั้ง", "10 ครั้ง (2^10)", "100 ครั้ง"], correct: 2 },
+            { question: "Merge Sort จัดอยู่ในประเภทอัลกอริทึมแบบใด?", options: ["Greedy", "Divide and Conquer", "Dynamic Programming", "Brute Force"], correct: 1 },
+            { question: "ในกรณีที่ข้อมูลเรียงเกือบเสร็จแล้ว อัลกอริทึมใดมักทำงานได้เร็วที่สุด?", options: ["Insertion Sort", "Selection Sort", "Merge Sort", "Quick Sort"], correct: 0 },
+            { question: "ข้อเสียหลักของ Bubble Sort คืออะไร?", options: ["เข้าใจยาก", "ใช้หน่วยความจำเยอะ", "ทำงานช้ามากกับข้อมูลจำนวนเยอะ", "ไม่สามารถเรียงเลขทศนิยมได้"], correct: 2 },
+            { question: "Linear Search มี Time Complexity กรณีแย่สุด (Worst Case) เป็นเท่าใด?", options: ["O(1)", "O(log n)", "O(n)", "O(n^2)"], correct: 2 },
+            { question: "Binary Search เร็วกว่า Linear Search เพราะอะไร?", options: ["คอมพิวเตอร์ชอบเลขฐานสอง", "ตัดข้อมูลทิ้งทีละครึ่ง", "ไม่ต้องเปรียบเทียบค่า", "ใช้ AI ช่วย"], correct: 1 },
+            { question: "การหาค่า Pivot เกี่ยวข้องกับอัลกอริทึมใด?", options: ["Merge Sort", "Bubble Sort", "Quick Sort", "Insertion Sort"], correct: 2 },
+            { question: "ถ้าต้องการเรียงข้อมูลนักเรียน 50 คนตามเลขที่ ควรใช้วิธีใดที่เขียนโปรแกรมง่ายที่สุด?", options: ["Quick Sort", "Bubble Sort", "Merge Sort", "Heap Sort"], correct: 1 },
+            { question: "ขั้นตอนสุดท้ายของ Merge Sort คืออะไร?", options: ["Divide", "Swap", "Merge (ผสาน)", "Pivot"], correct: 2 },
+        ];
+        
+        const currentQuestionIndex = ref(0);
+        const selectedAnswer = ref(null);
+        const score = ref(0);
+        const quizFinished = ref(false);
+
+        const startQuiz = () => { resetQuiz(); currentView.value = 'quiz'; };
+        const resetQuiz = () => { currentQuestionIndex.value = 0; selectedAnswer.value = null; score.value = 0; quizFinished.value = false; };
+        const selectAnswer = (idx) => { selectedAnswer.value = idx; };
+        const nextQuestion = () => {
+            if (selectedAnswer.value === quizQuestions[currentQuestionIndex.value].correct) score.value++;
+            if (currentQuestionIndex.value < quizQuestions.length - 1) { currentQuestionIndex.value++; selectedAnswer.value = null; } else { quizFinished.value = true; }
+        };
+        const getFeedback = (s) => {
+            if (s >= 12) return 'ยอดเยี่ยม! คุณเข้าใจเรื่องนี้ดีมาก';
+            if (s >= 8) return 'ทำได้ดี! ทบทวนอีกนิดหน่อยจะแม่นยำขึ้น';
+            return 'พยายามอีกนิด! ลองกลับไปดู Visualizer อีกรอบนะ';
+        };
+
+        return {
+            currentView, loginInput, passwordInput, showPasswordInput, studentData, currentUser, isAdmin,
+            sortingAlgos, searchingAlgos, activeTopic,
+            dataArray, isSorting, activeIndices, sortedIndices, statusMessage,
+            handleFileUpload, clearStudentData, handleLogin, enterTeachingMode, logout, selectTopic,
+            resetArray, runAlgorithm, getBarColor, getIcon,
+            quizQuestions, currentQuestionIndex, selectedAnswer, score, quizFinished,
+            startQuiz, selectAnswer, nextQuestion, getFeedback
+        };
+    }
+}).mount('#app');
+</script>
+
+</body>
+</html>
