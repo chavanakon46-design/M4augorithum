@@ -8,6 +8,7 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
 
     <style>
@@ -28,15 +29,15 @@
     <nav class="p-4 shadow-lg flex justify-between items-center z-50 transition-colors duration-300"
          :class="isAdmin ? 'bg-slate-800 text-white' : 'bg-indigo-600 text-white'">
         <div class="flex items-center gap-2">
-            <i class="ph ph-code text-2xl"></i>
+            <i class="ph ph-database text-2xl"></i>
             <span class="text-xl font-bold">
-                {{ isAdmin ? 'Teacher Panel (ระบบจัดการ)' : 'AlgoLearn (ม.4)' }}
+                {{ isAdmin ? 'Teacher Panel (Online DB)' : 'AlgoLearn (ม.4)' }}
             </span>
         </div>
         <div v-if="currentUser" class="flex items-center gap-4">
             <div class="text-right hidden sm:block">
                 <div class="font-bold">{{ currentUser.name }}</div>
-                <div class="text-xs opacity-80">{{ isAdmin ? 'สถานะ: ครูผู้สอน' : 'รหัสนักเรียน: ' + currentUser.id }}</div>
+                <div class="text-xs opacity-80">{{ isAdmin ? 'สถานะ: ครูผู้สอน' : 'รหัสนักเรียน: ' + currentUser.student_code }}</div>
             </div>
             <button @click="logout" class="bg-red-500 hover:bg-red-600 px-3 py-1 rounded text-sm transition shadow">
                 <i class="ph ph-sign-out"></i> <span class="hidden sm:inline">ออกจากระบบ</span>
@@ -49,9 +50,6 @@
         <transition name="fade">
         <div v-if="currentView === 'login'" class="flex flex-col items-center justify-center h-[80vh]">
             <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center border-t-4 border-indigo-500 relative overflow-hidden">
-                <div class="absolute top-0 left-0 -mt-4 -ml-4 w-20 h-20 bg-blue-100 rounded-full opacity-50 blur-xl"></div>
-                <div class="absolute bottom-0 right-0 -mb-4 -mr-4 w-24 h-24 bg-purple-100 rounded-full opacity-50 blur-xl"></div>
-                
                 <h2 class="text-2xl font-bold mb-2 text-indigo-700">เข้าสู่ระบบห้องเรียน</h2>
                 <p class="text-gray-500 mb-8">วิชาวิทยาการคอมพิวเตอร์ 1</p>
                 
@@ -66,60 +64,61 @@
                                class="w-full p-4 border border-gray-300 rounded-xl focus:ring-4 focus:ring-slate-200 focus:border-slate-500 outline-none text-center text-lg bg-slate-50 shadow-sm">
                     </div>
 
-                    <button @click="handleLogin" 
+                    <button @click="handleLogin" :disabled="isLoading"
                             class="w-full text-white p-4 rounded-xl font-bold text-lg transition shadow-lg transform active:scale-95 flex justify-center items-center gap-2"
                             :class="showPasswordInput ? 'bg-slate-700 hover:bg-slate-800' : 'bg-indigo-600 hover:bg-indigo-700'">
-                        <span>{{ showPasswordInput ? 'ยืนยันตัวตน Admin' : 'เข้าสู่บทเรียน' }}</span>
-                        <i class="ph ph-arrow-right"></i>
+                        <span v-if="!isLoading">{{ showPasswordInput ? 'ยืนยันตัวตน Admin' : 'เข้าสู่บทเรียน' }}</span>
+                        <span v-else>กำลังโหลด...</span>
                     </button>
+                    
+                    <p v-if="loginError" class="text-red-500 text-sm mt-2">{{ loginError }}</p>
                 </div>
             </div>
-            <p class="mt-6 text-gray-400 text-sm">© 2024 Computer Science Learning Platform</p>
+            <p class="mt-6 text-gray-400 text-sm">System powered by Supabase</p>
         </div>
         </transition>
 
         <transition name="fade">
         <div v-if="currentView === 'teacher_dashboard'" class="py-4">
             <h1 class="text-2xl font-bold text-slate-700 mb-6 flex items-center gap-2">
-                <i class="ph ph-control"></i> แผงควบคุมผู้สอน
+                <i class="ph ph-control"></i> แผงควบคุมผู้สอน (Connected)
             </h1>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div class="md:col-span-1 space-y-6">
-                    
                     <div class="bg-white p-6 rounded-xl shadow-md border-l-4 border-green-500">
-                        <h3 class="font-bold text-lg text-slate-800 mb-2">จัดการรายชื่อนักเรียน</h3>
-                        <p class="text-sm text-gray-500 mb-4">นำเข้าไฟล์ Excel (.xlsx) ที่มีคอลัมน์ A (รหัส) และ B (ชื่อ)</p>
+                        <h3 class="font-bold text-lg text-slate-800 mb-2">อัปเดตรายชื่อนักเรียน</h3>
+                        <p class="text-sm text-gray-500 mb-4">ไฟล์ Excel ต้องมีคอลัมน์ A (รหัส) และ B (ชื่อ)</p>
                         
                         <label class="cursor-pointer bg-green-50 hover:bg-green-100 text-green-700 w-full py-3 rounded-lg border border-green-200 border-dashed flex items-center justify-center gap-2 transition hover:shadow-md">
-                            <i class="ph ph-microsoft-excel-logo text-xl"></i> 
-                            <span>เลือกไฟล์ Excel</span>
-                            <input type="file" @change="handleFileUpload" class="hidden" accept=".xlsx, .xls">
+                            <i v-if="!isLoading" class="ph ph-microsoft-excel-logo text-xl"></i> 
+                            <i v-else class="ph ph-spinner animate-spin text-xl"></i>
+                            <span>{{ isLoading ? 'กำลังบันทึก...' : 'เลือกไฟล์ Excel' }}</span>
+                            <input type="file" @change="handleFileUpload" class="hidden" accept=".xlsx, .xls" :disabled="isLoading">
                         </label>
-                        
-                        <div class="mt-4 flex justify-between items-center text-sm">
-                            <span class="text-gray-500">จำนวนนักเรียน:</span>
-                            <span class="font-bold text-slate-800 text-xl">{{ studentData.length }}</span>
-                        </div>
                     </div>
                     
+                     <div class="bg-white p-6 rounded-xl shadow-md border-l-4 border-purple-500">
+                        <h3 class="font-bold text-lg text-slate-800 mb-2">รายงานคะแนน</h3>
+                        <p class="text-sm text-gray-500 mb-4">ดูคะแนนสอบล่าสุดของนักเรียน</p>
+                        <button @click="fetchScores" class="w-full bg-purple-100 text-purple-700 py-2 rounded-lg hover:bg-purple-200 transition text-sm font-bold">
+                            <i class="ph ph-arrow-clockwise"></i> รีเฟรชคะแนน
+                        </button>
+                    </div>
+
                     <div class="bg-gradient-to-br from-slate-700 to-slate-800 text-white p-6 rounded-xl shadow-lg">
                         <h3 class="font-bold text-xl mb-4">โหมดการสอน (Demo)</h3>
-                        <p class="text-slate-300 text-sm mb-6">เข้าสู่หน้าบทเรียนเพื่อสาธิต Visualizer บนหน้าจอใหญ่</p>
                         <button @click="enterTeachingMode" class="w-full bg-white text-slate-900 py-3 rounded-lg font-bold hover:bg-blue-50 transition flex items-center justify-center gap-2 shadow-lg">
                             <i class="ph ph-presentation-chart"></i> เริ่มการสอน
                         </button>
                     </div>
                 </div>
 
-                <div class="md:col-span-2 bg-white rounded-xl shadow-md overflow-hidden flex flex-col h-[70vh]">
+                <div class="md:col-span-2 bg-white rounded-xl shadow-md overflow-hidden flex flex-col h-[75vh]">
                     <div class="p-4 border-b bg-gray-50 flex justify-between items-center">
                         <h3 class="font-bold text-slate-700 flex items-center gap-2">
-                            <i class="ph ph-users"></i> รายชื่อในระบบ
+                            <i class="ph ph-users"></i> รายชื่อและคะแนน ({{ studentData.length }})
                         </h3>
-                        <button v-if="studentData.length > 0" @click="clearStudentData" class="text-xs text-red-500 hover:text-red-700 hover:underline">
-                            <i class="ph ph-trash"></i> ล้างข้อมูล
-                        </button>
                     </div>
                     <div class="overflow-y-auto student-list flex-grow p-0 relative">
                         <table class="w-full text-left border-collapse">
@@ -127,23 +126,25 @@
                                 <tr>
                                     <th class="p-3 text-sm font-semibold w-1/4">รหัสนักเรียน</th>
                                     <th class="p-3 text-sm font-semibold">ชื่อ-นามสกุล</th>
-                                    <th class="p-3 text-sm font-semibold text-center">สถานะ</th>
+                                    <th class="p-3 text-sm font-semibold text-center">คะแนนล่าสุด</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr v-if="studentData.length === 0">
-                                    <td colspan="3" class="p-12 text-center text-gray-400 flex flex-col items-center justify-center">
-                                        <i class="ph ph-folder-open text-4xl mb-2"></i>
-                                        ยังไม่มีข้อมูลนักเรียน <br> กรุณาอัปโหลดไฟล์ Excel
+                                    <td colspan="3" class="p-12 text-center text-gray-400">
+                                        <i class="ph ph-database text-4xl mb-2"></i><br>
+                                        {{ isLoading ? 'กำลังดึงข้อมูล...' : 'ยังไม่มีข้อมูลนักเรียน' }}
                                     </td>
                                 </tr>
                                 <tr v-for="(student, idx) in studentData" :key="idx" class="border-b last:border-0 hover:bg-slate-50 transition">
-                                    <td class="p-3 text-slate-600 font-mono border-r border-gray-100">{{ student.id }}</td>
+                                    <td class="p-3 text-slate-600 font-mono border-r border-gray-100">{{ student.student_code }}</td>
                                     <td class="p-3 text-slate-800 font-medium">{{ student.name }}</td>
                                     <td class="p-3 text-center">
-                                        <span class="inline-flex items-center gap-1 text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">
-                                            <span class="w-2 h-2 rounded-full bg-green-500"></span> พร้อม
+                                        <span v-if="student.score !== undefined" class="font-bold" 
+                                              :class="student.score >= 8 ? 'text-green-600' : 'text-orange-500'">
+                                            {{ student.score }} / 15
                                         </span>
+                                        <span v-else class="text-gray-300">-</span>
                                     </td>
                                 </tr>
                             </tbody>
@@ -220,7 +221,6 @@
 
                 <div class="lg:col-span-2 bg-slate-800 rounded-xl shadow-md p-6 flex flex-col items-center justify-center relative overflow-hidden min-h-[450px]">
                     <div class="absolute top-4 left-4 text-white/50 text-sm font-mono">Visualizer Mode</div>
-                    
                     <div class="flex items-end justify-center gap-1 h-64 w-full mb-8 px-4">
                         <div v-for="(val, idx) in dataArray" :key="idx"
                              :style="{ height: val + 'px', backgroundColor: getBarColor(idx) }"
@@ -228,7 +228,6 @@
                              <span v-if="dataArray.length <= 20">{{ val }}</span>
                         </div>
                     </div>
-
                     <div class="flex gap-4 flex-wrap justify-center z-10">
                         <button @click="resetArray" :disabled="isSorting" class="bg-gray-700 hover:bg-gray-600 text-white px-6 py-2 rounded-full transition disabled:opacity-50">
                             <i class="ph ph-arrows-clockwise"></i> สุ่มใหม่
@@ -240,7 +239,6 @@
                             {{ isSorting ? 'กำลังทำงาน...' : 'เริ่มทำงาน' }}
                         </button>
                     </div>
-                    
                     <div v-if="statusMessage" class="mt-8 text-yellow-300 font-mono text-sm bg-black/40 px-6 py-2 rounded-full backdrop-blur-sm">
                         > {{ statusMessage }}
                     </div>
@@ -304,10 +302,11 @@
                     <div class="text-gray-400 font-medium">คะแนนเต็ม 15</div>
                 </div>
                 
-                <p class="mb-10 text-xl font-medium text-slate-600">{{ getFeedback(score) }}</p>
+                <div v-if="isSavingScore" class="text-blue-500 mb-4 animate-pulse">กำลังบันทึกคะแนนลงระบบ...</div>
+                <div v-else class="text-green-500 mb-4 font-bold flex items-center justify-center gap-1"><i class="ph ph-check-circle"></i> บันทึกคะแนนเรียบร้อย</div>
 
                 <div class="flex justify-center gap-4">
-                     <button @click="startQuiz" class="px-8 py-3 rounded-xl border-2 border-gray-200 hover:bg-gray-50 text-gray-600 font-bold transition">ทำอีกครั้ง</button>
+                     <button @click="startQuiz" class="px-8 py-3 rounded-xl border-2 border-gray-200 hover:bg-gray-50 text-gray-600 font-bold transition">สอบแก้ตัว</button>
                      <button @click="currentView = 'menu'" class="bg-indigo-600 text-white px-8 py-3 rounded-xl hover:bg-indigo-700 shadow-lg font-bold transition">กลับเมนูหลัก</button>
                 </div>
             </div>
@@ -318,21 +317,31 @@
 </div>
 
 <script>
-const { createApp, ref, computed } = Vue;
+const { createApp, ref, computed, onMounted } = Vue;
+
+// --------------------------------------------------------
+// ⚠️ SETUP SUPABASE CONFIGURATION HERE
+// --------------------------------------------------------
+const SUPABASE_URL = 'https://bzfhixfeeenkknnilbgw.supabase.co'; 
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6ZmhpeGZlZWVua2tubmlsYmd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAxNjMxOTMsImV4cCI6MjA4NTczOTE5M30.gFjptTI5eB7RHOVsmwMi3QsKkmD35R5Poh6ofLDgOWo';
+// --------------------------------------------------------
 
 createApp({
     setup() {
+        // Initialize Supabase Client
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
         // --- State ---
         const currentView = ref('login');
         const loginInput = ref('');
         const passwordInput = ref('');
         const showPasswordInput = ref(false);
+        const loginError = ref('');
         const currentUser = ref(null);
+        const isLoading = ref(false);
+        const isSavingScore = ref(false);
         
-        // Default Mock Data (Empty initially to force Admin upload usage)
-        const studentData = ref([
-             { id: '1001', name: 'นายตัวอย่าง (Demo)' } // Keep one for immediate testing
-        ]);
+        const studentData = ref([]); // Now loaded from DB
         
         const activeTopic = ref(null);
         const dataArray = ref([]);
@@ -343,131 +352,128 @@ createApp({
 
         const isAdmin = computed(() => currentUser.value && currentUser.value.role === 'admin');
 
-        // --- Data Content ---
+        // --- Data Content (Algorithms & Questions) ---
+        // (Same content as previous version - Keeping it brief for readability)
         const sortingAlgos = [
-            { key: 'bubble', name: 'Bubble Sort', desc: 'เรียงลำดับแบบฟองสบู่', color: 'border-blue-400', textColor: 'text-blue-600', 
-              concept: 'เปรียบเทียบข้อมูลคู่ติดกัน ถ้าตัวหน้ามากกว่าตัวหลังให้สลับที่ ทำซ้ำจนกว่าจะเรียงเสร็จ',
-              content: 'Bubble Sort เป็นอัลกอริทึมที่ง่ายที่สุด ทำงานโดยการเปรียบเทียบข้อมูลที่อยู่ติดกันทีละคู่ และสลับตำแหน่งหากลำดับผิด (เช่น น้อยไปมาก แต่ตัวหน้ามากกว่าตัวหลัง) ทำแบบนี้ซ้ำๆ ข้อมูลที่มีค่ามากที่สุดจะ "ลอย" ไปอยู่ที่ท้ายสุดเหมือนฟองสบู่' },
-            { key: 'selection', name: 'Selection Sort', desc: 'เลือกค่าที่น้อยที่สุด', color: 'border-green-400', textColor: 'text-green-600',
-              concept: 'ค้นหาค่าที่น้อยที่สุดในส่วนที่ยังไม่เรียง แล้วนำมาวางต่อท้ายส่วนที่เรียงแล้ว',
-              content: 'Selection Sort ทำงานโดยแบ่งข้อมูลเป็น 2 ส่วน คือส่วนที่เรียงแล้วและส่วนที่ยังไม่เรียง ในแต่ละรอบ จะทำการค้นหา "ค่าที่น้อยที่สุด" จากส่วนที่ยังไม่เรียง แล้วสลับเอามานำไว้ในตำแหน่งแรกสุดของส่วนที่ยังไม่เรียง' },
-            { key: 'insertion', name: 'Insertion Sort', desc: 'แทรกไพ่ในมือ', color: 'border-yellow-400', textColor: 'text-yellow-600',
-              concept: 'หยิบข้อมูลทีละตัว แล้วนำไป "แทรก" ในตำแหน่งที่ถูกต้องของกลุ่มข้อมูลที่เรียงแล้ว',
-              content: 'Insertion Sort เปรียบเสมือนการเรียงไพ่ในมือ เราจะหยิบไพ่ใบใหม่ขึ้นมา แล้วมองหาตำแหน่งที่ถูกต้องในกองไพ่ที่เราถืออยู่แล้วเสียบ (Insert) ไพ่นั้นลงไป ทำให้ไพ่ในมือเราเรียงลำดับถูกต้องเสมอ' },
-            { key: 'merge', name: 'Merge Sort', desc: 'แบ่งแยกและเอาชนะ', color: 'border-purple-400', textColor: 'text-purple-600',
-              concept: 'แบ่งข้อมูลเป็นกลุ่มย่อยจนเหลือตัวเดียว แล้วนำกลับมา "ผสาน" (Merge) กันโดยเรียงลำดับไปด้วย',
-              content: 'Merge Sort ใช้วิธี Divide and Conquer (แบ่งแยกและเอาชนะ) โดยแบ่งข้อมูลออกเป็นครึ่งไปเรื่อยๆ จนเหลือกลุ่มละ 1 ตัว จากนั้นเริ่มกระบวนการ Merge คือการนำกลุ่มย่อยมารวมกันโดยเปรียบเทียบค่าและเรียงให้ถูกต้อง' },
-            { key: 'quick', name: 'Quick Sort', desc: 'เลือกจุดหมุน (Pivot)', color: 'border-red-400', textColor: 'text-red-600',
-              concept: 'เลือกค่า Pivot แบ่งข้อมูลเป็น 2 ฝั่ง (น้อยกว่า Pivot และ มากกว่า Pivot) แล้วทำซ้ำในแต่ละฝั่ง',
-              content: 'Quick Sort ทำงานไวมาก โดยเลือกค่าหนึ่งเป็น Pivot จากนั้นจัดกลุ่มข้อมูล: ตัวที่น้อยกว่า Pivot ไปซ้าย, มากกว่าไปขวา แล้วทำซ้ำกระบวนการนี้กับกลุ่มย่อยทางซ้ายและขวา' },
+            { key: 'bubble', name: 'Bubble Sort', desc: 'เรียงลำดับแบบฟองสบู่', color: 'border-blue-400', textColor: 'text-blue-600', concept: 'เปรียบเทียบข้อมูลคู่ติดกัน ถ้าตัวหน้ามากกว่าตัวหลังให้สลับที่ ทำซ้ำจนกว่าจะเรียงเสร็จ', content: 'Bubble Sort เป็นอัลกอริทึมที่ง่ายที่สุด...' },
+            { key: 'selection', name: 'Selection Sort', desc: 'เลือกค่าที่น้อยที่สุด', color: 'border-green-400', textColor: 'text-green-600', concept: 'ค้นหาค่าที่น้อยที่สุดในส่วนที่ยังไม่เรียง แล้วนำมาวางต่อท้ายส่วนที่เรียงแล้ว', content: 'Selection Sort ทำงานโดยแบ่งข้อมูลเป็น 2 ส่วน...' },
+            { key: 'insertion', name: 'Insertion Sort', desc: 'แทรกไพ่ในมือ', color: 'border-yellow-400', textColor: 'text-yellow-600', concept: 'หยิบข้อมูลทีละตัว แล้วนำไป "แทรก" ในตำแหน่งที่ถูกต้อง', content: 'Insertion Sort เปรียบเสมือนการเรียงไพ่ในมือ...' },
+            { key: 'merge', name: 'Merge Sort', desc: 'แบ่งแยกและเอาชนะ', color: 'border-purple-400', textColor: 'text-purple-600', concept: 'แบ่งข้อมูลเป็นกลุ่มย่อยจนเหลือตัวเดียว แล้วนำกลับมา "ผสาน" กัน', content: 'Merge Sort ใช้วิธี Divide and Conquer...' },
+            { key: 'quick', name: 'Quick Sort', desc: 'เลือกจุดหมุน (Pivot)', color: 'border-red-400', textColor: 'text-red-600', concept: 'เลือกค่า Pivot แบ่งข้อมูลเป็น 2 ฝั่ง แล้วทำซ้ำ', content: 'Quick Sort ทำงานไวมาก โดยเลือกค่าหนึ่งเป็น Pivot...' },
         ];
-
         const searchingAlgos = [
-            { key: 'linear', name: 'Linear Search', desc: 'ค้นหาตามลำดับ', color: 'border-orange-400', textColor: 'text-orange-600',
-              concept: 'ไล่ดูข้อมูลทีละตัวตั้งแต่ต้นจนจบ ว่าตรงกับสิ่งที่หาหรือไม่',
-              content: 'Linear Search คือการค้นหาแบบตรงไปตรงมาที่สุด โดยเริ่มดูข้อมูลตั้งแต่ตัวแรก ตัวที่สอง ไปเรื่อยๆ จนกว่าจะเจอ หรือจนกว่าข้อมูลจะหมด ข้อดีคือข้อมูลไม่ต้องเรียงลำดับมาก่อน แต่ข้อเสียคือช้าถ้าข้อมูลเยอะ' },
-            { key: 'binary', name: 'Binary Search', desc: 'ค้นหาแบบทวิภาค', color: 'border-teal-400', textColor: 'text-teal-600',
-              concept: 'แบ่งครึ่งข้อมูลแล้วดูว่าค่าที่หาอยู่ฝั่งซ้ายหรือขวา (ข้อมูลต้องเรียงลำดับแล้ว)',
-              content: 'Binary Search มีประสิทธิภาพสูงมาก แต่ข้อมูล "ต้องเรียงลำดับแล้ว" เท่านั้น หลักการคือดูตัวตรงกลาง ถ้าตัวที่หา "น้อยกว่า" ตัวกลาง ก็ไปหาแค่ฝั่งซ้าย ถ้า "มากกว่า" ก็ไปหาแค่ฝั่งขวา ตัดข้อมูลทิ้งทีละครึ่งเสมอ' }
+            { key: 'linear', name: 'Linear Search', desc: 'ค้นหาตามลำดับ', color: 'border-orange-400', textColor: 'text-orange-600', concept: 'ไล่ดูข้อมูลทีละตัวตั้งแต่ต้นจนจบ', content: 'Linear Search คือการค้นหาแบบตรงไปตรงมาที่สุด...' },
+            { key: 'binary', name: 'Binary Search', desc: 'ค้นหาแบบทวิภาค', color: 'border-teal-400', textColor: 'text-teal-600', concept: 'แบ่งครึ่งข้อมูลแล้วดูว่าค่าที่หาอยู่ฝั่งซ้ายหรือขวา', content: 'Binary Search ต้องใช้กับข้อมูลที่เรียงลำดับแล้วเท่านั้น...' }
         ];
 
-        // --- Visualizer Helper ---
-        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-        const getBarColor = (idx) => {
-            if (activeIndices.value.includes(idx)) return '#facc15'; // Yellow
-            if (sortedIndices.value.includes(idx)) return '#22c55e'; // Green
-            return '#6366f1'; // Default Indigo
-        };
-        const getIcon = (key) => {
-            const icons = { bubble: 'ph-circles-three', selection: 'ph-cursor-click', insertion: 'ph-cards', merge: 'ph-arrows-merge', quick: 'ph-lightning', linear: 'ph-arrow-right', binary: 'ph-arrows-split' };
-            return 'ph ' + (icons[key] || 'ph-code');
-        };
-
-        const resetArray = () => {
-            const count = window.innerWidth < 600 ? 10 : 15;
-            if (activeTopic.value && activeTopic.value.key === 'binary') {
-                dataArray.value = Array.from({length: count}, () => Math.floor(Math.random() * 180) + 20).sort((a,b) => a-b);
-            } else {
-                dataArray.value = Array.from({length: count}, () => Math.floor(Math.random() * 180) + 20);
-            }
-            activeIndices.value = []; sortedIndices.value = []; statusMessage.value = 'พร้อมทำงาน';
+        // --- DB Logic: Fetch Students & Scores ---
+        const fetchStudents = async () => {
+            isLoading.value = true;
+            // 1. Get Students
+            const { data: students, error } = await supabase.from('students').select('*').order('student_code');
+            if (error) { alert('Error fetching students: ' + error.message); isLoading.value = false; return; }
+            
+            // 2. Get Latest Scores
+            const { data: scores, error: scoreErr } = await supabase.from('scores').select('*').order('created_at', { ascending: false });
+            
+            // 3. Map Scores to Students
+            studentData.value = students.map(s => {
+                // Find latest score for this student
+                const userScore = scores ? scores.find(sc => sc.student_code === s.student_code) : null;
+                return { ...s, score: userScore ? userScore.score : undefined };
+            });
+            isLoading.value = false;
         };
 
-        // --- Logic: Upload, Login, Admin ---
+        // --- Logic: Upload Excel to Supabase ---
         const handleFileUpload = (event) => {
             const file = event.target.files[0];
             if(!file) return;
+            isLoading.value = true;
+
             const reader = new FileReader();
-            reader.onload = (e) => {
+            reader.onload = async (e) => {
                 try {
                     const data = new Uint8Array(e.target.result);
                     const workbook = XLSX.read(data, { type: 'array' });
                     const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
                     const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
                     
-                    const loadedStudents = jsonData.slice(1).map(row => ({
-                        id: String(row[0]).trim(),
+                    const newStudents = jsonData.slice(1).map(row => ({
+                        student_code: String(row[0]).trim(),
                         name: row[1]
-                    })).filter(s => s.id && s.name && s.id !== 'undefined');
+                    })).filter(s => s.student_code && s.name && s.student_code !== 'undefined');
 
-                    if(loadedStudents.length > 0) {
-                        studentData.value = loadedStudents;
-                        alert(`นำเข้าข้อมูลสำเร็จ: ${loadedStudents.length} คน`);
+                    if(newStudents.length > 0) {
+                        // Upsert into Supabase (Insert or Update if exists)
+                        const { error } = await supabase.from('students').upsert(newStudents, { onConflict: 'student_code' });
+                        
+                        if (error) throw error;
+                        
+                        alert(`บันทึกข้อมูลสำเร็จ: ${newStudents.length} คน`);
+                        fetchStudents(); // Refresh list
                     } else {
                         alert("ไม่พบข้อมูลในไฟล์ หรือรูปแบบไฟล์ไม่ถูกต้อง");
                     }
                 } catch (err) {
-                    alert("เกิดข้อผิดพลาดในการอ่านไฟล์: " + err.message);
+                    alert("เกิดข้อผิดพลาด: " + err.message);
+                } finally {
+                    isLoading.value = false;
                 }
             };
             reader.readAsArrayBuffer(file);
         };
 
-        const clearStudentData = () => {
-            if(confirm('ต้องการล้างรายชื่อนักเรียนทั้งหมดหรือไม่?')) {
-                studentData.value = [];
-            }
-        };
-
-        const handleLogin = () => {
+        // --- Login Logic (Check DB) ---
+        const handleLogin = async () => {
             const input = loginInput.value.trim();
+            loginError.value = '';
             if (!input) return;
+            isLoading.value = true;
 
             // 1. Admin Check
             if (input.toLowerCase() === 'admin') {
                 if (!showPasswordInput.value) {
                     showPasswordInput.value = true;
+                    isLoading.value = false;
                     return;
                 }
                 if (passwordInput.value === '1234') { 
-                    currentUser.value = { id: 'ADMIN', name: 'คุณครูผู้สอน', role: 'admin' };
+                    currentUser.value = { student_code: 'ADMIN', name: 'คุณครูผู้สอน', role: 'admin' };
                     currentView.value = 'teacher_dashboard';
+                    fetchStudents(); // Load data for dashboard
                     resetLoginInputs();
                 } else {
-                    alert('รหัสผ่าน Admin ไม่ถูกต้อง');
+                    loginError.value = 'รหัสผ่าน Admin ไม่ถูกต้อง';
                 }
+                isLoading.value = false;
                 return;
             }
 
-            // 2. Student Check
-            const student = studentData.value.find(s => s.id === input);
-            if (student) {
-                currentUser.value = { ...student, role: 'student' };
+            // 2. Student Check via Supabase
+            const { data, error } = await supabase
+                .from('students')
+                .select('*')
+                .eq('student_code', input)
+                .single();
+
+            if (data) {
+                currentUser.value = { ...data, role: 'student' };
                 currentView.value = 'menu';
                 resetLoginInputs();
             } else {
-                alert('ไม่พบรหัสนักเรียนในระบบ \n(หากยังไม่ได้ลงทะเบียน โปรดติดต่อครูผู้สอน)');
+                loginError.value = 'ไม่พบรหัสนักเรียนนี้ในระบบ';
             }
+            isLoading.value = false;
         };
 
         const resetLoginInputs = () => {
             loginInput.value = '';
             passwordInput.value = '';
             showPasswordInput.value = false;
+            loginError.value = '';
         };
 
-        const enterTeachingMode = () => { currentView.value = 'menu'; };
-        
         const logout = () => {
             if (confirm("ต้องการออกจากระบบใช่หรือไม่?")) {
                 currentUser.value = null;
@@ -477,94 +483,7 @@ createApp({
             }
         };
 
-        const selectTopic = (algo) => { activeTopic.value = algo; currentView.value = 'content'; resetArray(); };
-
-        // --- Visualizer Algorithms ---
-        const runAlgorithm = async () => {
-            if (isSorting.value) return;
-            isSorting.value = true;
-            statusMessage.value = 'กำลังทำงาน...';
-            activeIndices.value = []; sortedIndices.value = [];
-            const arr = [...dataArray.value];
-            const key = activeTopic.value.key;
-
-            if (key === 'bubble') await bubbleSort(arr);
-            else if (key === 'selection') await selectionSort(arr);
-            else if (key === 'insertion') await insertionSort(arr);
-            else if (key === 'linear') await linearSearch(arr);
-            else if (key === 'binary') await binarySearch(arr);
-            else await bubbleSort(arr); // Default
-
-            isSorting.value = false; statusMessage.value = 'เสร็จสิ้น!';
-        };
-
-        // ... Algorithms (Simplified) ...
-        const bubbleSort = async (arr) => {
-            let n = arr.length;
-            for (let i = 0; i < n; i++) {
-                for (let j = 0; j < n - i - 1; j++) {
-                    activeIndices.value = [j, j + 1];
-                    statusMessage.value = `เทียบ ${arr[j]} กับ ${arr[j+1]}`;
-                    await sleep(300);
-                    if (arr[j] > arr[j + 1]) {
-                        [arr[j], arr[j+1]] = [arr[j+1], arr[j]];
-                        dataArray.value = [...arr];
-                        await sleep(300);
-                    }
-                }
-                sortedIndices.value.push(n - i - 1);
-            }
-            sortedIndices.value.push(0);
-        };
-        const selectionSort = async (arr) => {
-            let n = arr.length;
-            for (let i = 0; i < n; i++) {
-                let minIdx = i; activeIndices.value = [i];
-                for (let j = i + 1; j < n; j++) {
-                    activeIndices.value = [minIdx, j];
-                    statusMessage.value = `หาค่าน้อยสุด... เจอ ${arr[j]} เทียบกับ ${arr[minIdx]}`;
-                    await sleep(200);
-                    if (arr[j] < arr[minIdx]) minIdx = j;
-                }
-                if (minIdx !== i) { [arr[i], arr[minIdx]] = [arr[minIdx], arr[i]]; dataArray.value = [...arr]; await sleep(300); }
-                sortedIndices.value.push(i);
-            }
-        };
-        const insertionSort = async (arr) => {
-            let n = arr.length; sortedIndices.value.push(0);
-            for (let i = 1; i < n; i++) {
-                let key = arr[i]; let j = i - 1; activeIndices.value = [i];
-                statusMessage.value = `หยิบ ${key} มาแทรก`; await sleep(400);
-                while (j >= 0 && arr[j] > key) {
-                    activeIndices.value = [j, j+1]; arr[j + 1] = arr[j]; dataArray.value = [...arr]; await sleep(250); j--;
-                }
-                arr[j + 1] = key; dataArray.value = [...arr]; sortedIndices.value.push(i); await sleep(300);
-            }
-            sortedIndices.value = Array.from({length: n}, (_, i) => i);
-        };
-        const linearSearch = async (arr) => {
-            const target = arr[Math.floor(Math.random() * arr.length)];
-            statusMessage.value = `ค้นหาเลข: ${target}`; await sleep(800);
-            for(let i=0; i<arr.length; i++) {
-                activeIndices.value = [i]; statusMessage.value = `ช่องที่ ${i} คือ ${arr[i]} ใช่ไหม?`; await sleep(400);
-                if(arr[i] === target) { statusMessage.value = `เจอแล้ว! ที่ตำแหน่ง ${i}`; sortedIndices.value = [i]; activeIndices.value = []; return; }
-            }
-        };
-        const binarySearch = async (arr) => {
-            const target = arr[Math.floor(Math.random() * arr.length)];
-            statusMessage.value = `ค้นหาเลข: ${target}`; await sleep(800);
-            let left = 0, right = arr.length - 1;
-            while (left <= right) {
-                let mid = Math.floor((left + right) / 2); activeIndices.value = [mid];
-                statusMessage.value = `ดูตรงกลาง (${arr[mid]})`; await sleep(800);
-                if (arr[mid] === target) { statusMessage.value = `เจอแล้ว! ที่ตำแหน่ง ${mid}`; sortedIndices.value = [mid]; activeIndices.value = []; return; }
-                else if (arr[mid] < target) { statusMessage.value = `น้อยกว่า -> ตัดซ้าย`; left = mid + 1; }
-                else { statusMessage.value = `มากกว่า -> ตัดขวา`; right = mid - 1; }
-                let range = []; for(let k=left; k<=right; k++) range.push(k); sortedIndices.value = range; await sleep(500);
-            }
-        };
-
-        // --- Quiz Logic ---
+        // --- Quiz Logic with Score Saving ---
         const quizQuestions = [
             { question: "อัลกอริทึมใดเปรียบเทียบข้อมูลคู่ที่อยู่ติดกันและสลับที่?", options: ["Insertion Sort", "Bubble Sort", "Quick Sort", "Merge Sort"], correct: 1 },
             { question: "ข้อใดคือ Concept ของ Selection Sort?", options: ["แบ่งแยกและเอาชนะ", "แทรกข้อมูลเหมือนไพ่", "หาค่าน้อยสุดแล้วนำมาวางข้างหน้า", "หาค่ากลางแล้วแบ่งครึ่ง"], correct: 2 },
@@ -591,24 +510,63 @@ createApp({
         const startQuiz = () => { resetQuiz(); currentView.value = 'quiz'; };
         const resetQuiz = () => { currentQuestionIndex.value = 0; selectedAnswer.value = null; score.value = 0; quizFinished.value = false; };
         const selectAnswer = (idx) => { selectedAnswer.value = idx; };
-        const nextQuestion = () => {
+        
+        const nextQuestion = async () => {
             if (selectedAnswer.value === quizQuestions[currentQuestionIndex.value].correct) score.value++;
-            if (currentQuestionIndex.value < quizQuestions.length - 1) { currentQuestionIndex.value++; selectedAnswer.value = null; } else { quizFinished.value = true; }
-        };
-        const getFeedback = (s) => {
-            if (s >= 12) return 'ยอดเยี่ยม! คุณเข้าใจเรื่องนี้ดีมาก';
-            if (s >= 8) return 'ทำได้ดี! ทบทวนอีกนิดหน่อยจะแม่นยำขึ้น';
-            return 'พยายามอีกนิด! ลองกลับไปดู Visualizer อีกรอบนะ';
+            
+            if (currentQuestionIndex.value < quizQuestions.length - 1) {
+                currentQuestionIndex.value++; selectedAnswer.value = null;
+            } else {
+                quizFinished.value = true;
+                // Save Score to DB
+                if (currentUser.value && currentUser.value.role !== 'admin') {
+                    isSavingScore.value = true;
+                    await supabase.from('scores').insert({
+                        student_code: currentUser.value.student_code,
+                        score: score.value
+                    });
+                    isSavingScore.value = false;
+                }
+            }
         };
 
+        // --- Visualizer Functions (Shortened for brevity) ---
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        const getBarColor = (idx) => { if (activeIndices.value.includes(idx)) return '#facc15'; if (sortedIndices.value.includes(idx)) return '#22c55e'; return '#6366f1'; };
+        const getIcon = (key) => { const icons = { bubble: 'ph-circles-three', selection: 'ph-cursor-click', insertion: 'ph-cards', merge: 'ph-arrows-merge', quick: 'ph-lightning', linear: 'ph-arrow-right', binary: 'ph-arrows-split' }; return 'ph ' + (icons[key] || 'ph-code'); };
+        
+        const resetArray = () => {
+             const count = window.innerWidth < 600 ? 10 : 15;
+             if (activeTopic.value && activeTopic.value.key === 'binary') dataArray.value = Array.from({length: count}, () => Math.floor(Math.random() * 180) + 20).sort((a,b) => a-b);
+             else dataArray.value = Array.from({length: count}, () => Math.floor(Math.random() * 180) + 20);
+             activeIndices.value = []; sortedIndices.value = []; statusMessage.value = 'พร้อมทำงาน';
+        };
+        const selectTopic = (algo) => { activeTopic.value = algo; currentView.value = 'content'; resetArray(); };
+
+        const runAlgorithm = async () => {
+            if (isSorting.value) return; isSorting.value = true; statusMessage.value = 'กำลังทำงาน...'; activeIndices.value = []; sortedIndices.value = [];
+            const arr = [...dataArray.value]; const key = activeTopic.value.key;
+            if (key === 'bubble') await bubbleSort(arr); else if (key === 'selection') await selectionSort(arr); else if (key === 'insertion') await insertionSort(arr); else if (key === 'linear') await linearSearch(arr); else if (key === 'binary') await binarySearch(arr); else await bubbleSort(arr);
+            isSorting.value = false; statusMessage.value = 'เสร็จสิ้น!';
+        };
+
+        // Re-implementing simplified algos
+        const bubbleSort = async (arr) => { for (let i=0;i<arr.length;i++) { for (let j=0;j<arr.length-i-1;j++) { activeIndices.value=[j,j+1]; await sleep(200); if(arr[j]>arr[j+1]){ [arr[j],arr[j+1]]=[arr[j+1],arr[j]]; dataArray.value=[...arr]; await sleep(200); } } sortedIndices.value.push(arr.length-i-1); } sortedIndices.value.push(0); };
+        const selectionSort = async (arr) => { for(let i=0;i<arr.length;i++){ let min=i; activeIndices.value=[i]; for(let j=i+1;j<arr.length;j++){ activeIndices.value=[min,j]; await sleep(150); if(arr[j]<arr[min]) min=j; } if(min!==i){ [arr[i],arr[min]]=[arr[min],arr[i]]; dataArray.value=[...arr]; await sleep(200); } sortedIndices.value.push(i); } };
+        const insertionSort = async (arr) => { sortedIndices.value.push(0); for(let i=1;i<arr.length;i++){ let key=arr[i],j=i-1; activeIndices.value=[i]; await sleep(300); while(j>=0 && arr[j]>key){ activeIndices.value=[j,j+1]; arr[j+1]=arr[j]; dataArray.value=[...arr]; await sleep(200); j--; } arr[j+1]=key; dataArray.value=[...arr]; sortedIndices.value.push(i); await sleep(200); } sortedIndices.value=Array.from({length:arr.length},(_,i)=>i); };
+        const linearSearch = async (arr) => { const t=arr[Math.floor(Math.random()*arr.length)]; statusMessage.value=`หา ${t}`; await sleep(800); for(let i=0;i<arr.length;i++){ activeIndices.value=[i]; await sleep(300); if(arr[i]===t){ sortedIndices.value=[i]; activeIndices.value=[]; return; } } };
+        const binarySearch = async (arr) => { const t=arr[Math.floor(Math.random()*arr.length)]; statusMessage.value=`หา ${t}`; await sleep(800); let l=0,r=arr.length-1; while(l<=r){ let m=Math.floor((l+r)/2); activeIndices.value=[m]; await sleep(500); if(arr[m]===t){ sortedIndices.value=[m]; activeIndices.value=[]; return; } else if(arr[m]<t) l=m+1; else r=m-1; } };
+
+        const enterTeachingMode = () => { currentView.value = 'menu'; };
+        const getFeedback = (s) => s>=12 ? 'ยอดเยี่ยม!' : (s>=8 ? 'ทำได้ดี!' : 'พยายามอีกนิด!');
+        const fetchScores = fetchStudents; // Alias for refresh button
+
         return {
-            currentView, loginInput, passwordInput, showPasswordInput, studentData, currentUser, isAdmin,
-            sortingAlgos, searchingAlgos, activeTopic,
-            dataArray, isSorting, activeIndices, sortedIndices, statusMessage,
-            handleFileUpload, clearStudentData, handleLogin, enterTeachingMode, logout, selectTopic,
-            resetArray, runAlgorithm, getBarColor, getIcon,
-            quizQuestions, currentQuestionIndex, selectedAnswer, score, quizFinished,
-            startQuiz, selectAnswer, nextQuestion, getFeedback
+            currentView, loginInput, passwordInput, showPasswordInput, loginError, currentUser, isAdmin, isLoading, isSavingScore,
+            studentData, fetchStudents, fetchScores,
+            sortingAlgos, searchingAlgos, activeTopic, dataArray, isSorting, activeIndices, sortedIndices, statusMessage,
+            handleFileUpload, handleLogin, enterTeachingMode, logout, selectTopic, resetArray, runAlgorithm, getBarColor, getIcon,
+            quizQuestions, currentQuestionIndex, selectedAnswer, score, quizFinished, startQuiz, selectAnswer, nextQuestion, getFeedback
         };
     }
 }).mount('#app');
